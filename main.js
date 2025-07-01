@@ -150,9 +150,25 @@ video.addEventListener('loadedmetadata', () => {
   updateQuadVertices();
 });
 
+// Debug playback state
+video.addEventListener('playing', () => {
+  console.log('Video is playing');
+});
+video.addEventListener('pause', () => {
+  console.log('Video is paused');
+});
+video.addEventListener('error', (e) => {
+  console.error('Video error:', e);
+});
+
 window.addEventListener('resize', () => {
   resize();
   updateQuadVertices();
+});
+
+// Try to explicitly play video (some browsers restrict autoplay)
+video.play().catch(err => {
+  console.error('Explicit video.play() failed:', err);
 });
 
 resize();
