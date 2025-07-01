@@ -16,7 +16,6 @@ const vertexShaderSrc = `
 attribute vec2 a_position;
 varying vec2 v_texCoord;
 void main() {
-  // Flip Y coordinate here
   v_texCoord = vec2(a_position.x * 0.5 + 0.5, 1.0 - (a_position.y * 0.5 + 0.5));
   gl_Position = vec4(a_position, 0, 1);
 }`;
@@ -66,36 +65,65 @@ function createProgram(vsSource, fsSource) {
 const program = createProgram(vertexShaderSrc, fragmentShaderSrc);
 gl.useProgram(program);
 
-// Look up attributes
 const positionLoc = gl.getAttribLocation(program, 'a_position');
 const chromaKeyLoc = gl.getUniformLocation(program, 'u_chromaKey');
 const videoLoc = gl.getUniformLocation(program, 'u_video');
 
 gl.uniform1i(videoLoc, 0); // texture unit 0
 
-// Set up a fullscreen quad
 const positionBuffer = gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-const positions = new Float32Array([
-  -1, -1,
-  1, -1,
-  -1, 1,
-  -1, 1,
-  1, -1,
-  1, 1
-]);
-gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
-
 gl.enableVertexAttribArray(positionLoc);
-gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
 
-// Create video and texture
+let videoAspectRatio = 1;
+
+function updateQuadVertices() {
+  const canvasAspect = canvas.width / canvas.height;
+
+  let scaleX = 1;
+  let scaleY = 1;
+
+  if (canvasAspect > videoAspectRatio) {
+    scaleX = videoAspectRatio / canvasAspect;
+  } else {
+    scaleY = canvasAspect / videoAspectRatio;
+  }
+
+  const positions = new Float32Array([
+    -scaleX, -scaleY,
+     scaleX, -scaleY,
+    -scaleX,  scaleY,
+    -scaleX,  scaleY,
+     scaleX, -scaleY,
+     scaleX,  scaleY
+  ]);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+  gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
+}
+
 const video = document.createElement('video');
 video.autoplay = true;
 video.loop = true;
 video.muted = true;
 video.src = 'http://localhost:3333/example.mp4';
-video.play();
+
+video.addEventListener('loadedmetadata', () => {
+  videoAspectRatio = video.videoWidth / video.videoHeight;
+  updateQuadVertices();
+});
+
+window.addEventListener('resize', () => {
+  resize();
+  updateQuadVertices();
+});
+
+resize();
+updateQuadVertices();
+
+const chromaKeyColor = [0.0, 1.0, 0.0, 1.0];
+gl.uniform4fv(chromaKeyLoc, chromaKeyColor);
 
 const videoTexture = gl.createTexture();
 gl.bindTexture(gl.TEXTURE_2D, videoTexture);
@@ -103,11 +131,6 @@ gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
 
-// Chroma key color (default green screen color)
-const chromaKeyColor = [0.0, 1.0, 0.0, 1.0];
-gl.uniform4fv(chromaKeyLoc, chromaKeyColor);
-
-// Render loop
 function render() {
   if (video.readyState >= video.HAVE_CURRENT_DATA) {
     gl.bindTexture(gl.TEXTURE_2D, videoTexture);
