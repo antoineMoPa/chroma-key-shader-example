@@ -24,19 +24,55 @@ const fragmentShaderSrc = `
 precision mediump float;
 uniform sampler2D u_video;
 varying vec2 v_texCoord;
-uniform vec4 u_chromaKey; // chroma key color rgba (green screen default)
-const float similarity = 0.4;
-const float smoothness = 0.1;
+uniform vec4 u_chromaKey; // chroma key color rgba (green screen default) - should be user-ajustable in real product
+const float similarity = 0.7; // should be user-ajustable in real product
+const float smoothness = 0.05; // should be user-ajustable in real product
+const int BLUR_RADIUS = 2; // higher is slower
+
+vec3 rgb2ycbcr(vec3 color) {
+    float Y = 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
+    float Cb = color.b - Y;
+    float Cr = color.r - Y;
+    return vec3(Y, Cb, Cr);
+}
+
+float blurAlpha(vec2 uv, vec3 keyYCbCr, float similarity, float smoothness) {
+    float sum = 0.0;
+    float count = 0.0;
+    float texelOffset = 1.0 / 3840.0;  // TODO: Replace with u_texelSize for dynamic resolution
+
+    for (int x = -BLUR_RADIUS; x <= BLUR_RADIUS; x++) {
+        for (int y = -BLUR_RADIUS; y <= BLUR_RADIUS; y++) {
+            vec2 offset = vec2(float(x), float(y)) * texelOffset;
+            vec4 sampleColor = texture2D(u_video, uv + offset);
+
+            vec3 sampleYCbCr = rgb2ycbcr(sampleColor.rgb);
+            float sampleDist = distance(sampleYCbCr.yz, keyYCbCr.yz);
+            float sampleAlpha = smoothstep(similarity - smoothness, similarity + smoothness, sampleDist);
+
+            sum += sampleAlpha;
+            count += 1.0;
+        }
+    }
+
+    return sum / count;
+}
+
 void main() {
-  vec4 color = texture2D(u_video, v_texCoord);
-  float Y1 = 0.299 * u_chromaKey.r + 0.587 * u_chromaKey.g + 0.114 * u_chromaKey.b;
-  float Y2 = 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
-  float Cr1 = u_chromaKey.r - Y1;
-  float Cb1 = u_chromaKey.b - Y1;
-  float Cr2 = color.r - Y2;
-  float Cb2 = color.b - Y2;
-  float blend = smoothstep(similarity, similarity + smoothness, distance(vec2(Cr1, Cb1), vec2(Cr2, Cb2)));
-  gl_FragColor = vec4(color.rgb, color.a * blend);
+    vec4 color = texture2D(u_video, v_texCoord);
+
+
+    vec3 keyYCbCr = rgb2ycbcr(u_chromaKey.rgb);
+    vec3 colorYCbCr = rgb2ycbcr(color.rgb);
+
+    float chromaDist = distance(colorYCbCr.yz, keyYCbCr.yz);
+
+    float alpha = blurAlpha(v_texCoord, keyYCbCr, similarity, smoothness);
+    alpha = pow(alpha, 2.0);
+
+    // float toDebug = chromaDist < 0.65 ? 1.0: 0.0;
+    // float toDebug = alpha;
+    gl_FragColor = vec4(color.rgb * alpha, alpha);
 }`;
 
 function createShader(type, source) {
